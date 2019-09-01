@@ -180,7 +180,7 @@ class ImageSaveHelper(threading.Thread):
             while not self._queue.empty():
                 # Get an image from the queue
                 args, method = self._queue.get(block=False, timeout=2)
-                #print(fullpath)
+                # print(fullpath)
 
                 # Save image
                 method.save(*args)

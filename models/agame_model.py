@@ -30,7 +30,7 @@ def softmax_aggregate(predicted_seg, object_ids):
     assert final_seg_wrongids.dtype == torch.int64
     final_seg = torch.zeros_like(final_seg_wrongids)
     for idx, obj_idx in enumerate(object_ids):
-        final_seg[final_seg_wrongids == (idx+1)] = obj_idx
+        final_seg[final_seg_wrongids == obj_idx] = obj_idx
     return final_seg, {obj_idx: aggregated[:,2*(idx+1):2*(idx+2),:,:] for idx, obj_idx in enumerate(object_ids)}
 
 def get_required_padding(height, width, div):
@@ -99,7 +99,7 @@ class DilationpyramidRelu(nn.Module):
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_uniform_(m.weight)
                 if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)                    
+                    nn.init.constant_(m.bias, 0)
     def forward(self, x):
         h = []
         for i in range(self.nlevels):
@@ -118,7 +118,7 @@ class GaussiansAgame(nn.Module):
         self.cov_reg = nn.Parameter(cov_reg_init * torch.ones(4, 1, nchannels_lda, 1, 1))
         nn.init.kaiming_uniform_(self.conv_in.weight)
     def get_init_state(self, ref_feats, ref_seg):
-        B, C, H, W = ref_feats['s16'].size()
+        B, C, H, W = ref_feats['s16'].size()    #might be a problem here
         N = H * W
         K1 = ref_seg.size(1)
         conv_ref_feats = self.conv_in(ref_feats['s16'])
@@ -235,7 +235,7 @@ class GaussiansAgameHack(nn.Module):
             scores = [scores[i] + self.logprob_trainable_bias[i] for i in range(nclasses)]
         scores_tensor = torch.cat(scores, dim=-3)
         return scores_tensor, (means, covariances)
-    
+
 class RGMPLike(nn.Module):
     def __init__(self, children_cfg):
         super().__init__()
@@ -255,7 +255,7 @@ class RGMPLike(nn.Module):
                        dynmod_state['prev_seg'], dynmod_state['init_seg']], dim=-3)
         h = self.layers(h)
         return h, dynmod_state
-    
+
 class RGMPLikeNoInit(nn.Module):
     def __init__(self, children_cfg):
         super().__init__()
@@ -289,7 +289,7 @@ class FusionAgame(nn.Module): # Feed Forward Stack
         h = self.layers(h)
         coarse_segscore = self.predictor(h)
         return h, coarse_segscore
-        
+
 class UpsampleAgame(nn.Module):
     """Based on Piotr Dollar's sharpmask, fairly standard U-net/ladderstyle like upsampling path
     """
@@ -324,7 +324,7 @@ class TrackSeg(nn.Module):
         self.dynmod   = DYNMODS[dynmod_cfg[0]](*dynmod_cfg[1])
         self.fusmod   = FUSMODS[fusmod_cfg[0]](*fusmod_cfg[1])
         self.segmod   = SEGMODS[segmod_cfg[0]](*segmod_cfg[1])
-        
+
     def get_init_state(self, image, given_seg):
         feats = self.backbone.get_features(image)
         state = {}
@@ -340,7 +340,7 @@ class TrackSeg(nn.Module):
     def extract_feats(self, img):
         feats = self.backbone.get_features(img)
         return feats
-    
+
     def forward(self, feats, state):
         appmod_output, state['appmod'] = self.appmod(feats, state)
         dynmod_output, state['dynmod'] = self.dynmod(feats, state)
@@ -348,7 +348,7 @@ class TrackSeg(nn.Module):
 
         segscore = self.segmod(feats, fused_output, state)
         return state, coarse_segscore, segscore
-        
+
 class AGAME(nn.Module):
     def __init__(self,
                  backbone=('resnet101s16', (True, ('layer4',),('layer4',),('layer2',),('layer1',))),
@@ -389,7 +389,7 @@ class AGAME(nn.Module):
         params:
             x (Tensor): Video data of size (B,L,C,H,W)
             given_labels (List): Initial segmentations, as a list of (None OR (B,1,H,W) tensor)
-            state (dict): Contains entire state at a given time step
+            ! state (dict): Contains entire state at a given time step
         returns:
             Dict of tensors:
                 logsegs (dict of Tensor): one element for each tracked object, each tensor of size (B,L,2,H,W)
@@ -428,17 +428,17 @@ class AGAME(nn.Module):
         else: # use previous state, update labels if needed
             object_ids = list(state.keys())
             init_label = given_labels[0] if isinstance(given_labels, (tuple, list)) else given_labels
-            if init_label is not None:
-                new_object_ids = init_label.unique().tolist()
-                if 0 in object_ids: object_ids.remove(0)
-                
-                for obj_idx in new_object_ids:
-                    given_seg = F.avg_pool2d(torch.cat([init_label!=obj_idx, init_label==obj_idx], dim=-3).float(), 16)
-                    if state.get(obj_idx) is None:
-                        state[obj_idx] = self.trackseg.get_init_state(video_frames[0], given_seg)
-                    else:
-                        raise NotImplementedError("Received a given (ground-truth) segmentation for an object idx that is already initialized. This could happen in the future, but should not happen with standard VOS datasets. Existing ids are {} and new ids are {}".format(state.keys(), new_object_ids))
-                object_ids = object_ids + new_object_ids
+            # if init_label is not None:
+            #     new_object_ids = init_label.unique().tolist()
+            #     if 0 in object_ids: object_ids.remove(0)
+                #
+                # for obj_idx in new_object_ids:
+                #     given_seg = F.avg_pool2d(torch.cat([init_label!=obj_idx, init_label==obj_idx], dim=-3).float(), 16)
+                #     if state.get(obj_idx) is None:
+                #         state[obj_idx] = self.trackseg.get_init_state(video_frames[0], given_seg)
+                #     else:
+                #         # raise NotImplementedError("Received a given (ground-truth) segmentation for an object idx that is already initialized. This could happen in the future, but should not happen with standard VOS datasets. Existing ids are {} and new ids are {}".format(state.keys(), new_object_ids))
+                # object_ids = object_ids + new_object_ids
         object_visibility = {obj_idx: 0 for obj_idx in object_ids}
 
         logseg_lsts = {k: [] for k in object_ids}            # Used for training
@@ -471,17 +471,18 @@ class AGAME(nn.Module):
             if isinstance(given_labels, (list, tuple)) and given_labels[i] is not None and i != 0:
                 new_object_ids = given_labels[i].unique().tolist()
                 if 0 in new_object_ids: new_object_ids.remove(0)
-                
-                for obj_idx in new_object_ids:
-                    given_label_as_segmap_lst = [given_labels[i]!=obj_idx, given_labels[i]==obj_idx]
-                    given_seg = F.avg_pool2d(torch.cat(given_label_as_segmap_lst, dim=-3).float(), 16)
-                    if state.get(obj_idx) is None:
-                        state[obj_idx] = self.trackseg.get_init_state(video_frames[i], given_seg)
-                        object_visibility[obj_idx] = i
-                    else:
-                        raise NotImplementedError("Received a given (ground-truth) segmentation for an object idx that is already initialized. This could happen in the future, but should not happen with standard VOS datasets. Existing ids are {} and new ids are {}".format(state.keys(), new_object_ids))
-                object_ids = object_ids + new_object_ids
-            
+
+                # for obj_idx in new_object_ids:
+                #     given_label_as_segmap_lst = [given_labels[i]!=obj_idx, given_labels[i]==obj_idx]
+                #     given_seg = F.avg_pool2d(torch.cat(given_label_as_segmap_lst, dim=-3).float(), 16)
+                #     if state.get(obj_idx) is None:
+                #         state[obj_idx] = self.trackseg.get_init_state(video_frames[i], given_seg)
+                #         object_visibility[obj_idx] = i
+                #     else:
+                #         print("Check what happens here")
+                #         # raise NotImplementedError("Received a given (ground-truth) segmentation for an object idx that is already initialized. This could happen in the future, but should not happen with standard VOS datasets. Existing ids are {} and new ids are {}".format(state.keys(), new_object_ids))
+                # object_ids = object_ids + new_object_ids
+
             # Infer one time-step through model
             coarse_segscore = {}
             segscore = {}

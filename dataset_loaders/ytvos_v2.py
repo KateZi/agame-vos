@@ -130,11 +130,11 @@ class YTVOSV2(torch.utils.data.Dataset):
                              and len(self.get_image_frame_ids(seq)[min(self._nonempty_frame_ids[seq]) :
                                                                    max(self._visible_objects[seq].keys()) + 1])
                              >= self._seqlen]
-        print("{} sequences remaining after filtering on length (from first anno obj appearance to last anno frame.".format(len(self._viable_seqs)))
+        print("YTVOS {} sequences remaining after filtering on length (from first anno obj appearance to last anno frame.".format(len(self._viable_seqs)))
 
         # Filter out sequences with wrong resolution
         self._viable_seqs = [seq for seq in self._viable_seqs if tuple(self._resolutions[seq]) == (720,1280)]
-        print("{} sequences remaining after filtering out sequences that are not in 720p.".format(
+        print("YTVOS {} sequences remaining after filtering out sequences that are not in 720p.".format(
             len(self._viable_seqs)))
 
     def __len__(self):

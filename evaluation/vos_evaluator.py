@@ -49,10 +49,13 @@ class VOSEvaluator(object):
             self._imsavehlp = utils.ImageSaveHelper() # Thread inside
             if dataset.__class__.__name__ == 'DAVIS17V2':
                 self._sdm = utils.ReadSaveDAVISChallengeLabels()
-            elif dataset.__class__.__name__ == 'YTVOSV2':
-                self._sdm = utils.ReadSaveYTVOSChallengeLabels()
+            # elif dataset.__class__.__name__ == 'YTVOSV2':
+            #     self._sdm = utils.ReadSaveYTVOSChallengeLabels()
             else:
-                raise NotImplementedError("Requested to save predicted segmentations with a dataset where this functionality is not supported. Dataset was {}".format(dataset.__class__.__name__))
+                try:
+                    self._sdm = utils.ReadSaveDAVISChallengeLabels()
+                except:
+                    raise NotImplementedError("Requested to save predicted segmentations with a dataset where this functionality is not supported. Dataset was {}".format(dataset.__class__.__name__))
 
     def read_video_part(self, video_part):
         images = video_part['images'].to(self._device)
@@ -64,7 +67,7 @@ class VOSEvaluator(object):
 
     def get_seg_measure(self, tracker_out, segannos, frame_idx0, seqname, obj_idx):
         B, N, C, H, W = tracker_out['segs'].size()
-        if  N - frame_idx0 < 3:
+        if N - frame_idx0 < 3:
             print("Object {} in sequence {} was tracked for only {} frames, should be at least 3 frames, setting iou to 1.".format(obj_idx, seqname, N - frame_idx0))
             measure = 1.0
         else:
@@ -91,7 +94,7 @@ class VOSEvaluator(object):
             predicted_segmentation_lst = []
         if self._calculate_measures:
             measure_lsts = {}
-#        tracker_out = None
+        # tracker_out = None
         tracker_state = None
         for video_part in video_parts:
             images, given_segannos, segannos, fnames = self.read_video_part(video_part)
@@ -127,6 +130,7 @@ class VOSEvaluator(object):
         else:
             measures = None
             print(seqname)
+            print("or here")
 
         if self._debug_sequences:
             raise NotImplementedError("Joakim probably played ping-pong instead of implementing this.")
@@ -159,6 +163,7 @@ class VOSEvaluator(object):
                     measures = self.evaluate_video(model, seqname, video_parts, output_path)
                 except:
                     print(seqname)
+                    print("problem is here")
                     raise
                 if self._calculate_measures:
                     performance_measures['iou']['perseq'].update(measures)
@@ -174,6 +179,7 @@ class VOSEvaluator(object):
                 output_path, performance_measures['iou']['mean']))
 
         if self._save_predicted_segmentations:
+            print("Storing result in {}".format(output_path))
             self._imsavehlp.kill()
 
 

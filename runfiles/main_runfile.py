@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import random
+import time
 from collections import OrderedDict
 from optparse import OptionParser
 
@@ -18,7 +19,7 @@ from torch.optim import lr_scheduler
 from PIL import Image
 
 import dataset_loaders
-from dataset_loaders import IMAGENET_MEAN, IMAGENET_STD, DAVIS17V2, YTVOSV2, LabelToLongTensor
+from dataset_loaders import IMAGENET_MEAN, IMAGENET_STD, DAVIS17V2, LabelToLongTensor, RANDATA #, YTVOSV2
 import evaluation
 import models
 import trainers
@@ -28,6 +29,8 @@ from local_config import config
 parser = OptionParser()
 parser.add_option("--train", action="store_true", dest="train", default=None)
 parser.add_option("--test", action="store_true", dest="test", default=None)
+parser.add_option("--forward", action="store_true", dest="forward", default=None)
+parser.add_option("--debug", action="store_true", dest="debug", default=None)
 (options, args) = parser.parse_args()
 
 
@@ -66,15 +69,20 @@ def train_alpha(model):
 
     train_set = torch.utils.data.ConcatDataset([
         DAVIS17V2(config['davis17_path'], '2017', 'train', image_read, label_read, train_transform, nframes,
-                  random_object_sampler, start_frame='random'),
-        YTVOSV2(config['ytvos_path'], 'train', 'train_joakim', 'JPEGImages', image_read, label_read, train_transform,
-                nframes, random_object_sampler, start_frame='random')
+                  random_object_sampler, start_frame='random')
+        #YTVOSV2(config['ytvos_path'], 'train', 'train_joakim', 'JPEGImages', image_read, label_read, train_transform,
+        #        nframes, random_object_sampler, start_frame='random')
     ])
-    val_set = YTVOSV2(config['ytvos_path'], 'train', 'val_joakim', 'JPEGImages', image_read, label_read, None,
-                      nframes_val, deterministic_object_sampler, start_frame='first')
+    #val_set = YTVOSV2(config['ytvos_path'], 'train', 'val_joakim', 'JPEGImages', image_read, label_read, None,
+                      # nframes_val, deterministic_object_sampler, start_frame='first')
+    val_set = DAVIS17V2(config['davis17_path'], '2017', 'val', image_read, label_read, None,
+                        nframes_val, deterministic_object_sampler, start_frame='first')
+
     train_loader = DataLoader(train_set, shuffle=True, batch_size=batch_size, num_workers=11)
+    # val_loader = DataLoader(val_set, shuffle=False, batch_size=batch_size, num_workers=11)
     val_loader = DataLoader(val_set, shuffle=False, batch_size=batch_size, num_workers=11)
-    print("Sets initiated with {} (train), {} (val), and {} (test) samples.".format(len(train_set), len(val_set)))
+
+    print("Sets initiated with {} (train), and {} (test) samples.".format(len(train_set), len(val_set)))
 
     objective = nn.NLLLoss(ignore_index=255).cuda()
     optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad],
@@ -124,12 +132,15 @@ def train_beta(model):
 
     train_set = torch.utils.data.ConcatDataset([
         DAVIS17V2(config['davis17_path'], '2017', 'train', image_read, label_read, train_transform, nframes,
-                  random_object_sampler, start_frame='random'),
-        YTVOSV2(config['ytvos_path'], 'train', 'train_joakim', 'JPEGImages', image_read, label_read, train_transform,
-                nframes, random_object_sampler, start_frame='random')
+                  random_object_sampler, start_frame='random')
+    #    YTVOSV2(config['ytvos_path'], 'train', 'train_joakim', 'JPEGImages', image_read, label_read, train_transform,
+                # nframes, random_object_sampler, start_frame='random')
     ])
-    val_set = YTVOSV2(config['ytvos_path'], 'train', 'val_joakim', 'JPEGImages', image_read, label_read, None,
-                      nframes_val, deterministic_object_sampler, start_frame='first')
+    #val_set = YTVOSV2(config['ytvos_path'], 'train', 'val_joakim', 'JPEGImages', image_read, label_read, None,
+                      # nframes_val, deterministic_object_sampler, start_frame='first')
+
+    val_set = DAVIS17V2(config['davis17_path'], '2017', 'val', image_read, label_read, None,
+                nframes_val, deterministic_object_sampler, start_frame='first')
 
     sampler = torch.utils.data.WeightedRandomSampler(len(train_set.datasets[0])*[1/len(train_set.datasets[0])] + len(train_set.datasets[1])*[1/len(train_set.datasets[1])], 2*len(train_set.datasets[0]), replacement=False)
     train_loader = DataLoader(train_set, batch_size=batch_size, sampler=sampler, num_workers=11)
@@ -166,19 +177,22 @@ def test_model(model, debug_sequences_dict=None, save_predictions=False, predict
     def label_read(path):
         pic = Image.open(path)
         transform = tv.transforms.Compose(
-            [LabelToLongTensor()])
+                [LabelToLongTensor()])
         label = transform(pic)
         return label
     datasets = {
         'DAVIS16_train': DAVIS17V2(config['davis17_path'], '2016', 'train', image_read, label_read, None, nframes),
         'DAVIS16_val': DAVIS17V2(config['davis17_path'], '2016', 'val', image_read, label_read, None, nframes),
-        'DAVIS17_val': DAVIS17V2(config['davis17_path'], '2017', 'val', image_read, label_read, None, nframes),
-        'YTVOS_jval': YTVOSV2(config['ytvos_path'], 'train', 'val_joakim', 'JPEGImages', image_read, label_read,
-                              None, nframes),
-        'YTVOS_val': YTVOSV2(config['ytvos_path'], 'valid', None, 'JPEGImages', image_read, label_read,
-                             None, nframes)
+        'DAVIS17_val': DAVIS17V2(config['davis17_path'], '2017', 'val', image_read, label_read, None, nframes)
+        # 'YTVOS_jval': YTVOSV2(config['ytvos_path'], 'train', 'val_joakim', 'JPEGImages', image_read, label_read,
+        #                       None, nframes),
+        # (self, root_path, split, image_set, impath='JPEGImages', image_read=get_default_image_read(),
+        #  anno_read=get_default_anno_read(), joint_transform=None,
+        #  samplelen=4, obj_selection=get_sample_all(), min_num_obj=1, start_frame='random'):
+        # 'YTVOS_val': YTVOSV2(config['ytvos_path'], 'valid', None, 'JPEGImages', image_read, label_read,
+        #                      None, nframes)
     }
-    multitarget_sets = ('DAVIS17_val', 'YTVOS_jval', 'YTVOS_val')
+    multitarget_sets = ('DAVIS17_val')#, 'YTVOS_jval', 'YTVOS_val')
     
     if debug_sequences_dict is None:
         debug_sequences_dict = {key: () for key in datasets.keys()}
@@ -187,7 +201,7 @@ def test_model(model, debug_sequences_dict=None, save_predictions=False, predict
         if key == 'YTVOS_val':
             evaluator = evaluation.VOSEvaluator(dataset, 'cuda', 'all', True, False, debug_sequences_dict.get(key))
         elif key == 'DAVIS17_val':
-            evaluator = evaluation.VOSEvaluator(dataset, 'cuda', 'all', True, True, debug_sequences_dict.get(key))
+            evaluator = evaluation.VOSEvaluator(dataset, 'cuda', ['dogs-jump'], True, True, debug_sequences_dict.get(key))
         else:
             evaluator = evaluation.VOSEvaluator(dataset, 'cuda', 'all', False, True, debug_sequences_dict.get(key))
         result_fpath = os.path.join(config['output_path'], os.path.splitext(os.path.basename(__file__))[0])
@@ -198,6 +212,50 @@ def test_model(model, debug_sequences_dict=None, save_predictions=False, predict
             model.update_with_softmax_aggregation = False
         evaluator.evaluate(model, os.path.join(result_fpath, key))
 
+
+def forward(model, path, prediction_path, debug_sequences_dict=None, save_prediction=False):
+    size = (480, 854)
+    nframes = 128
+
+    # pre-processing the input
+    # function for reading a single image
+    def image_read(path):
+        pic = Image.open(path)
+        transform = tv.transforms.Compose(
+            [tv.transforms.ToTensor(),
+             tv.transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)])
+        return transform(pic)
+
+    def label_read(path):
+        if(os.path.exists(path)):
+            pic = Image.open(path)
+            transform = tv.transforms.Compose(
+                [LabelToLongTensor()])
+            label = transform(pic)
+        else:
+            label = torch.LongTensor(1, *size).fill_(255)  # Put label that will be ignored
+        return label
+
+    # our init : (self, root_path, image_set, image_read=get_default_image_read(),
+    #              anno_read=get_default_anno_read(),
+    #              joint_transform=None, samplelen=4, obj_selection=get_sample_all(), min_num_obj=1,
+    #              start_frame='random')
+    # YTVOS init : (self, root_path, split, image_set, impath='JPEGImages', image_read=get_default_image_read(),
+    #              anno_read=get_default_anno_read(), joint_transform=None,
+    #              samplelen=4, obj_selection=get_sample_all(), min_num_obj=1, start_frame='random')
+    datasets = {"new-botinok": RANDATA(root_path=path, image_set='val', image_read=image_read,
+                                   anno_read=label_read, joint_transform=None, samplelen=nframes, start_frame="first")}
+
+    if debug_sequences_dict is None:
+        debug_sequences_dict = {key: () for key in datasets.keys()}
+
+    for key, dataset in datasets.items():
+        evaluator = evaluation.VOSEvaluator(dataset, 'cuda', 'all', True, False, debug_sequences_dict.get(key))
+        result_fpath = os.path.join(path, os.path.splitext(os.path.basename(__file__))[0])
+
+        evaluator.evaluate(model, os.path.join(result_fpath, key))
+
+
 #debug_sequences_dict = {'DAVIS16 (train)':(), 'DAVIS16 (val)':('bmx-trees','drift-straight','motocross-jump','soapbox'), 'VOT16 (segm)':('ball1','bmx','book'), 'YTVOS':('97ab569ff3','c557b69fbf','8ea6687ab0','6cccc985e0')}
 debug_sequences_dict = {'DAVIS16_train':(), 'DAVIS16_val':(), 'VOT16_segm':(), 'YTVOS_val':()}
 
@@ -205,9 +263,9 @@ debug_sequences_dict = {'DAVIS16_train':(), 'DAVIS16_val':(), 'VOT16_segm':(), '
 def main():
     print("Started script: {}, with pytorch {}".format(os.path.basename(__file__), torch.__version__))
 
-    torch.cuda.manual_seed(0)
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
+    # torch.cuda.manual_seed(0)
+    # torch.backends.cudnn.enabled = True
+    # torch.backends.cudnn.benchmark = True
 
     model = models.AGAME(
         backbone=('resnet101s16', (True, ('layer4',),('layer4',),('layer2',),('layer1',))),
@@ -235,6 +293,21 @@ def main():
         train_beta(model)
     if options.test is not None:
         model.update_with_fine_scores = True
+        model.update_with_softmax_aggregation = False
+        model.process_first_frame = False
+        model.output_logsegs = False
+        model.output_coarse_logsegs = False
+        model.output_segs = True
+        runfile_name = os.path.splitext(os.path.basename(__file__))[0]
+        checkpoint_basename = config['workspace_path'] + runfile_name
+        model.load_state_dict(torch.load(checkpoint_basename + '_beta_best.pth.tar')['net'])
+        test_model(model, debug_sequences_dict=debug_sequences_dict, save_predictions=True,
+                   prediction_path=config['output_path'] + runfile_name + '_beta_best/')
+
+    if options.debug is not None:
+        path = "/home/kate/localdata/ours/new-botinok"
+
+        model.update_with_fine_scores = True
         model.update_with_softmax_aggregation = True
         model.process_first_frame = False
         model.output_logsegs = False
@@ -243,8 +316,11 @@ def main():
         runfile_name = os.path.splitext(os.path.basename(__file__))[0]
         checkpoint_basename = config['workspace_path'] + runfile_name
         model.load_state_dict(torch.load(checkpoint_basename + '_beta_best.pth.tar')['net'])
-        test_model(model, debug_sequences_dict=debug_sequences_dict, save_predictions=False,
-                   prediction_path=config['output_path'] + runfile_name + '_beta_best/')
+        forward(model, path, prediction_path="/home/kate/pytorch_output/main_runfile/ours/",
+                debug_sequences_dict=None, save_prediction=True)
+
+        print(" I CAN SEE THE CHANGE ")
+
 
 if __name__ == '__main__':
     main()
